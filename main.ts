@@ -142,6 +142,17 @@ export default class TreeModalPlugin extends Plugin {
     return leaves;
   }
 
+  isTerminalPluginEnabled(): boolean {
+    const enabled = (this.app as unknown as {
+      plugins?: { enabledPlugins?: Set<string> };
+    }).plugins?.enabledPlugins;
+    if (!enabled) return false;
+    for (const id of enabled) {
+      if (id.toLowerCase().includes("terminal")) return true;
+    }
+    return false;
+  }
+
   captureRightTerminalViewType(): string | null {
     const rightLeaves = this.getRightSidebarLeaves();
     const match = rightLeaves.find((leaf) => {
@@ -398,14 +409,31 @@ class TreeModalSettingTab extends PluginSettingTab {
           })
       );
 
+    const hasTerminal = this.plugin.isTerminalPluginEnabled();
+
+    if (!hasTerminal) {
+      const warn = containerEl.createDiv({ cls: "tree-modal-warn" });
+      warn.createEl("strong", { text: "Kein Terminal-Plugin aktiv. " });
+      warn.appendText(
+        "Die folgenden Einstellungen benötigen ein installiertes Terminal-Plugin (z. B. "
+      );
+      warn.createEl("a", {
+        text: "Terminal",
+        href: "obsidian://show-plugin?id=terminal",
+      });
+      warn.appendText("). Installiere und aktiviere es, um sie zu nutzen.");
+    }
+
     new Setting(containerEl)
       .setName("Terminal beim Start rechts sicherstellen")
       .setDesc(
         "Nach Obsidian-Start prüfen, ob ein Terminal in der rechten Sidebar existiert, und ggf. eins anlegen. Funktioniert nur, wenn der View-Type unten gesetzt ist."
       )
+      .setDisabled(!hasTerminal)
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.ensureTerminalRight)
+          .setDisabled(!hasTerminal)
           .onChange(async (value) => {
             this.plugin.settings.ensureTerminalRight = value;
             await this.plugin.saveSettings();
@@ -417,19 +445,22 @@ class TreeModalSettingTab extends PluginSettingTab {
       .setDesc(
         "View-Type des Terminal-Plugins. Öffne zuerst manuell ein Terminal in der rechten Sidebar, dann auf 'Aktuelles Terminal merken' klicken. Alternativ manuell eintragen."
       )
+      .setDisabled(!hasTerminal)
       .addText((text) =>
         text
           .setPlaceholder("z.B. terminal:terminal-view")
           .setValue(this.plugin.settings.terminalViewType)
+          .setDisabled(!hasTerminal)
           .onChange(async (value) => {
             this.plugin.settings.terminalViewType = value.trim();
             await this.plugin.saveSettings();
           })
       )
-      .addButton((btn) =>
+      .addButton((btn) => {
         btn
           .setButtonText("Aktuelles Terminal merken")
           .setCta()
+          .setDisabled(!hasTerminal)
           .onClick(async () => {
             const type = this.plugin.captureRightTerminalViewType();
             if (!type) {
@@ -442,7 +473,7 @@ class TreeModalSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
             new Notice(`Terminal-View-Type gespeichert: ${type}`);
             this.display();
-          })
-      );
+          });
+      });
   }
 }
