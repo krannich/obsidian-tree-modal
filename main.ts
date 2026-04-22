@@ -20,6 +20,9 @@ interface TreeModalSettings {
   hideChrome: boolean;
   ensureTerminalRight: boolean;
   terminalViewType: string;
+  openPathProperty: string;
+  enableOpenPathShiftClick: boolean;
+  enableOpenPathFileMenu: boolean;
 }
 
 const DEFAULT_SETTINGS: TreeModalSettings = {
@@ -30,6 +33,9 @@ const DEFAULT_SETTINGS: TreeModalSettings = {
   hideChrome: false,
   ensureTerminalRight: false,
   terminalViewType: "",
+  openPathProperty: "path",
+  enableOpenPathShiftClick: true,
+  enableOpenPathFileMenu: true,
 };
 
 export default class TreeModalPlugin extends Plugin {
@@ -45,16 +51,35 @@ export default class TreeModalPlugin extends Plugin {
       { capture: true }
     );
 
+    this.registerDomEvent(
+      document,
+      "mousedown",
+      this.handleMousedown.bind(this),
+      { capture: true }
+    );
+
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {
-        if (!this.settings.enableFileMenu) return;
         if (!(file instanceof TFile)) return;
-        menu.addItem((item) => {
-          item
-            .setTitle("In Modal öffnen")
-            .setIcon("maximize-2")
-            .onClick(() => this.openModalForFile(file));
-        });
+        if (this.settings.enableFileMenu) {
+          menu.addItem((item) => {
+            item
+              .setTitle("In Modal öffnen")
+              .setIcon("maximize-2")
+              .onClick(() => this.openModalForFile(file));
+          });
+        }
+        if (this.settings.enableOpenPathFileMenu) {
+          const raw = this.readPathProperty(file);
+          if (raw) {
+            menu.addItem((item) => {
+              item
+                .setTitle("Pfad im Finder öffnen")
+                .setIcon("folder-open")
+                .onClick(() => this.openPath(raw));
+            });
+          }
+        }
       })
     );
 
@@ -67,6 +92,26 @@ export default class TreeModalPlugin extends Plugin {
       id: "toggle-center-area",
       name: "Mittleren Bereich umschalten",
       callback: () => this.toggleHideCenter(),
+    });
+
+    this.addCommand({
+      id: "open-path-in-finder",
+      name: "Pfad der aktuellen Notiz im Finder öffnen",
+      callback: () => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file) {
+          new Notice("Keine aktive Datei.");
+          return;
+        }
+        const raw = this.readPathProperty(file);
+        if (!raw) {
+          new Notice(
+            `Keine Property "${this.settings.openPathProperty}" in der Frontmatter.`
+          );
+          return;
+        }
+        this.openPath(raw);
+      },
     });
 
     this.register(() => {
@@ -83,9 +128,20 @@ export default class TreeModalPlugin extends Plugin {
     });
   }
 
+  private handleMousedown(evt: MouseEvent) {
+    if (!evt.shiftKey) return;
+    const target = evt.target as HTMLElement | null;
+    if (!target) return;
+    // Nur im Property-Panel greifen — Baum wird in click behandelt
+    if (!target.closest("[data-property-key], .metadata-property, .metadata-container")) return;
+    this.handlePropertyShiftClick(evt, target);
+  }
+
   private handleExplorerClick(evt: MouseEvent) {
     const target = evt.target as HTMLElement | null;
     if (!target) return;
+
+    if (this.handlePropertyShiftClick(evt, target)) return;
 
     const item = target.closest(".nav-file-title") as HTMLElement | null;
     if (!item) return;
@@ -102,6 +158,110 @@ export default class TreeModalPlugin extends Plugin {
     evt.preventDefault();
     evt.stopPropagation();
     this.openModalForFile(file);
+  }
+
+  private handlePropertyShiftClick(evt: MouseEvent, target: HTMLElement): boolean {
+    if (!this.settings.enableOpenPathShiftClick) return false;
+    if (!evt.shiftKey) return false;
+
+    const prop =
+      (target.closest("[data-property-key]") as HTMLElement | null) ||
+      (target.closest(".metadata-property") as HTMLElement | null);
+
+    if (!prop) return false;
+
+    const key = this.readPropertyKey(prop);
+    if (!key || key !== this.settings.openPathProperty) return false;
+
+    const raw = this.readPropertyValueFromDom(prop);
+    if (!raw) return false;
+
+    evt.preventDefault();
+    evt.stopPropagation();
+    this.openPath(raw);
+    return true;
+  }
+
+  private readPropertyKey(prop: HTMLElement): string {
+    const attr = prop.getAttribute("data-property-key");
+    if (attr) return attr.trim();
+
+    const keyInput = prop.querySelector(
+      ".metadata-property-key-input"
+    ) as HTMLInputElement | null;
+    if (keyInput?.value) return keyInput.value.trim();
+
+    const keyEl = prop.querySelector(".metadata-property-key") as HTMLElement | null;
+    if (keyEl) {
+      const inner =
+        (keyEl.querySelector("input") as HTMLInputElement | null)?.value ||
+        keyEl.textContent ||
+        "";
+      if (inner) return inner.trim();
+    }
+    return "";
+  }
+
+  private readPropertyValueFromDom(prop: HTMLElement): string {
+    const valueWrapper = prop.querySelector(
+      ".metadata-property-value"
+    ) as HTMLElement | null;
+    const scope = valueWrapper ?? prop;
+
+    const editable = scope.querySelector(
+      ".metadata-input-longtext, [contenteditable='true']"
+    ) as HTMLElement | null;
+    if (editable && editable.textContent) return editable.textContent.trim();
+
+    const input = scope.querySelector(
+      "input.metadata-input-text, input[type='text'], input"
+    ) as HTMLInputElement | null;
+    if (input && input.value) return input.value.trim();
+
+    return scope.textContent?.trim() || "";
+  }
+
+  private readPathProperty(file: TFile): string | null {
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    const raw = fm?.[this.settings.openPathProperty];
+    if (typeof raw !== "string") return null;
+    const trimmed = raw.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private openPath(raw: string) {
+    const home = process.env.HOME || "";
+    let abs = raw.trim();
+    if (abs.startsWith("~/")) abs = home + abs.slice(1);
+    else if (abs === "~") abs = home;
+
+    try {
+      const req = (window as unknown as {
+        require?: (m: string) => unknown;
+      }).require;
+      if (!req) {
+        new Notice("Finder-Öffnen: window.require nicht verfügbar.");
+        return;
+      }
+      const electron = req("electron") as {
+        shell?: { openPath: (p: string) => Promise<string> };
+      };
+      const shell = electron?.shell;
+      if (!shell) {
+        new Notice("Finder-Öffnen: electron.shell nicht verfügbar.");
+        return;
+      }
+      shell
+        .openPath(abs)
+        .then((err) => {
+          if (err) new Notice(`Pfad konnte nicht geöffnet werden: ${err}`);
+        })
+        .catch((e) => {
+          new Notice(`Finder-Öffnen fehlgeschlagen: ${String(e)}`);
+        });
+    } catch (e) {
+      new Notice(`Fehler beim Öffnen: ${String(e)}`);
+    }
   }
 
   private matchesTriggerModifier(evt: MouseEvent): boolean {
@@ -373,6 +533,51 @@ class TreeModalSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.defaultMode)
           .onChange(async (value) => {
             this.plugin.settings.defaultMode = value as ModalMode;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl).setName("Pfad im Finder öffnen").setHeading();
+
+    new Setting(containerEl)
+      .setName("Property-Key")
+      .setDesc(
+        'Name der Frontmatter-Property, deren Wert per Shift+Klick oder Kontextmenü als externer Pfad im Finder/Explorer geöffnet wird. Unterstützt "~" als Heimverzeichnis.'
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("path")
+          .setValue(this.plugin.settings.openPathProperty)
+          .onChange(async (value) => {
+            this.plugin.settings.openPathProperty = value.trim() || "path";
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Shift+Klick auf Property")
+      .setDesc(
+        "Shift+Klick auf den Wert der Property im Eigenschaften-Panel öffnet den Pfad im Finder/Explorer."
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableOpenPathShiftClick)
+          .onChange(async (value) => {
+            this.plugin.settings.enableOpenPathShiftClick = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Kontextmenü auf Datei")
+      .setDesc(
+        'Rechtsklick auf eine Datei mit gesetzter Property zeigt "Pfad im Finder öffnen" als Menü-Eintrag.'
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableOpenPathFileMenu)
+          .onChange(async (value) => {
+            this.plugin.settings.enableOpenPathFileMenu = value;
             await this.plugin.saveSettings();
           })
       );
