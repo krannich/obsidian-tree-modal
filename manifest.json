@@ -1,0 +1,10 @@
+{
+  "id": "tree-modal",
+  "name": "Tree Modal",
+  "version": "1.0.0",
+  "minAppVersion": "1.4.0",
+  "description": "Open files from the file explorer in a modal preview instead of in the editor. Click a file in the tree to open an 80% viewport modal with Obsidian's native view header (read/edit, full width). Internal links inside the modal open in-place. Cmd/Ctrl-click falls back to opening normally.",
+  "author": "Dennis Krannich",
+  "authorUrl": "https://github.com/krannich",
+  "isDesktopOnly": false
+}

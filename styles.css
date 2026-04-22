@@ -1,0 +1,88 @@
+.tree-modal.modal {
+  width: 80vw;
+  height: 80vh;
+  max-width: 80vw;
+  max-height: 80vh;
+  padding: 0;
+}
+
+.tree-modal.modal .modal-close-button {
+  z-index: 10;
+}
+
+.tree-modal.modal .modal-title {
+  display: none;
+}
+
+.tree-modal.modal .modal-content {
+  padding: 0;
+  margin: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tree-modal-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.tree-modal-embedded-leaf {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tree-modal-embedded-leaf .view-content,
+.tree-modal-embedded-leaf .workspace-leaf-content {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Volle Breite: Obsidians readable-line-width im Modal deaktivieren */
+.tree-modal-embedded-leaf {
+  --file-line-width: 100%;
+  --line-width: 100%;
+  --line-width-adaptive: 100%;
+}
+
+.tree-modal-embedded-leaf .markdown-preview-sizer,
+.tree-modal-embedded-leaf .markdown-source-view .cm-contentContainer,
+.tree-modal-embedded-leaf .markdown-source-view .cm-sizer {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+.tree-modal-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  padding: var(--size-4-4);
+}
+
+/* Mittleren Bereich umschalten — gibt den Platz an die Seitenleisten */
+body.tree-modal-hide-center .workspace-split.mod-root {
+  flex: 0 0 0 !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  visibility: hidden;
+}
+
+body.tree-modal-hide-center .workspace-split.mod-left-split,
+body.tree-modal-hide-center .workspace-split.mod-right-split {
+  flex: 1 1 auto !important;
+}
+
+/* UI-Chrome ausblenden: Sidebar-Toggles + Sync-Status */
+body.tree-modal-hide-chrome .sidebar-toggle-button,
+body.tree-modal-hide-chrome .workspace-ribbon-collapse-btn {
+  display: none !important;
+}
+
+body.tree-modal-hide-chrome .status-bar-item.plugin-sync,
+body.tree-modal-hide-chrome .status-bar-item[data-plugin-id="sync"] {
+  display: none !important;
+}
