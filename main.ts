@@ -23,6 +23,7 @@ interface TreeModalSettings {
   openPathProperty: string;
   enableOpenPathShiftClick: boolean;
   enableOpenPathFileMenu: boolean;
+  openNewFileInModal: boolean;
 }
 
 const DEFAULT_SETTINGS: TreeModalSettings = {
@@ -36,6 +37,7 @@ const DEFAULT_SETTINGS: TreeModalSettings = {
   openPathProperty: "path",
   enableOpenPathShiftClick: true,
   enableOpenPathFileMenu: true,
+  openNewFileInModal: false,
 };
 
 export default class TreeModalPlugin extends Plugin {
@@ -125,6 +127,17 @@ export default class TreeModalPlugin extends Plugin {
         // View-Types sicher eingetragen haben
         window.setTimeout(() => void this.ensureTerminalInRightSidebar(), 600);
       }
+
+      // Nach onLayoutReady registrieren, damit Initial-Indexing-Events
+      // (die für alle bestehenden Dateien feuern) nicht ausgelöst werden.
+      this.registerEvent(
+        this.app.vault.on("create", (file) => {
+          if (!this.settings.openNewFileInModal) return;
+          if (!(file instanceof TFile)) return;
+          if (file.extension !== "md") return;
+          this.openModalForFile(file);
+        })
+      );
     });
   }
 
@@ -143,7 +156,7 @@ export default class TreeModalPlugin extends Plugin {
 
     if (this.handlePropertyShiftClick(evt, target)) return;
 
-    const item = target.closest(".nav-file-title") as HTMLElement | null;
+    const item = target.closest<HTMLElement>(".nav-file-title");
     if (!item) return;
 
     if (evt.metaKey || evt.ctrlKey) return;
@@ -165,8 +178,8 @@ export default class TreeModalPlugin extends Plugin {
     if (!evt.shiftKey) return false;
 
     const prop =
-      (target.closest("[data-property-key]") as HTMLElement | null) ||
-      (target.closest(".metadata-property") as HTMLElement | null);
+      target.closest<HTMLElement>("[data-property-key]") ||
+      target.closest<HTMLElement>(".metadata-property");
 
     if (!prop) return false;
 
@@ -186,15 +199,15 @@ export default class TreeModalPlugin extends Plugin {
     const attr = prop.getAttribute("data-property-key");
     if (attr) return attr.trim();
 
-    const keyInput = prop.querySelector(
+    const keyInput = prop.querySelector<HTMLInputElement>(
       ".metadata-property-key-input"
-    ) as HTMLInputElement | null;
+    );
     if (keyInput?.value) return keyInput.value.trim();
 
-    const keyEl = prop.querySelector(".metadata-property-key") as HTMLElement | null;
+    const keyEl = prop.querySelector<HTMLElement>(".metadata-property-key");
     if (keyEl) {
       const inner =
-        (keyEl.querySelector("input") as HTMLInputElement | null)?.value ||
+        keyEl.querySelector("input")?.value ||
         keyEl.textContent ||
         "";
       if (inner) return inner.trim();
@@ -203,19 +216,19 @@ export default class TreeModalPlugin extends Plugin {
   }
 
   private readPropertyValueFromDom(prop: HTMLElement): string {
-    const valueWrapper = prop.querySelector(
+    const valueWrapper = prop.querySelector<HTMLElement>(
       ".metadata-property-value"
-    ) as HTMLElement | null;
+    );
     const scope = valueWrapper ?? prop;
 
-    const editable = scope.querySelector(
+    const editable = scope.querySelector<HTMLElement>(
       ".metadata-input-longtext, [contenteditable='true']"
-    ) as HTMLElement | null;
+    );
     if (editable && editable.textContent) return editable.textContent.trim();
 
-    const input = scope.querySelector(
+    const input = scope.querySelector<HTMLInputElement>(
       "input.metadata-input-text, input[type='text'], input"
-    ) as HTMLInputElement | null;
+    );
     if (input && input.value) return input.value.trim();
 
     return scope.textContent?.trim() || "";
@@ -435,9 +448,9 @@ class PreviewModal extends Modal {
     const target = evt.target as HTMLElement | null;
     if (!target) return;
 
-    const anchor = target.closest(
+    const anchor = target.closest<HTMLElement>(
       "a.internal-link, .cm-hmd-internal-link, .cm-link"
-    ) as HTMLElement | null;
+    );
     if (!anchor) return;
 
     const linktext =
@@ -493,15 +506,15 @@ class TreeModalSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName("Modal").setHeading();
 
     new Setting(containerEl)
-      .setName("Trigger-Modifier")
+      .setName("Auslöser")
       .setDesc(
-        'Welche Taste beim Click auf eine Datei im Baum gedrückt sein muss, damit das Modal öffnet. "Keine" überschreibt den normalen Click (Cmd/Ctrl-Click bleibt Escape).'
+        'Welche Taste beim Klick auf eine Datei im Baum gedrückt sein muss, damit das Modal öffnet. "Keine" überschreibt den normalen Klick (Cmd/Ctrl-Klick bleibt Escape).'
       )
       .addDropdown((dd) =>
         dd
-          .addOption("none", "Keine (normaler Click)")
-          .addOption("shift", "Shift+Click")
-          .addOption("alt", "Alt/Option+Click")
+          .addOption("none", "Keine (normaler Klick)")
+          .addOption("shift", "Shift+Klick")
+          .addOption("alt", "Alt/Option+Klick")
           .setValue(this.plugin.settings.triggerModifier)
           .onChange(async (value) => {
             this.plugin.settings.triggerModifier = value as TriggerModifier;
@@ -522,9 +535,9 @@ class TreeModalSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Standard-Mode")
+      .setName("Standardmodus")
       .setDesc(
-        "Mit welchem Mode das Modal initial öffnet. Innerhalb des Modals kannst du über den Obsidian-View-Header (Buch-/Stift-Icon) jederzeit umschalten."
+        "Mit welchem Modus das Modal initial öffnet. Innerhalb des Modals kannst du über den Obsidian-View-Header (Buch-/Stift-Icon) jederzeit umschalten."
       )
       .addDropdown((dd) =>
         dd
@@ -537,10 +550,24 @@ class TreeModalSettingTab extends PluginSettingTab {
           })
       );
 
+    new Setting(containerEl)
+      .setName("Neue Dateien im Modal öffnen")
+      .setDesc(
+        "Wenn aktiv, öffnet eine frisch angelegte Markdown-Datei automatisch im Modal."
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.openNewFileInModal)
+          .onChange(async (value) => {
+            this.plugin.settings.openNewFileInModal = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
     new Setting(containerEl).setName("Pfad im Finder öffnen").setHeading();
 
     new Setting(containerEl)
-      .setName("Property-Key")
+      .setName("Property-Schlüssel")
       .setDesc(
         'Name der Frontmatter-Property, deren Wert per Shift+Klick oder Kontextmenü als externer Pfad im Finder/Explorer geöffnet wird. Unterstützt "~" als Heimverzeichnis.'
       )
@@ -600,7 +627,7 @@ class TreeModalSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("UI-Chrome ausblenden")
+      .setName("Oberflächen-Icons ausblenden")
       .setDesc(
         "Versteckt die Sidebar-Toggle-Icons (links/rechts oben) und das Sync-Status-Icon unten rechts."
       )
@@ -646,7 +673,7 @@ class TreeModalSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Terminal-View-Type")
+      .setName("Terminal-Viewtyp")
       .setDesc(
         "View-Type des Terminal-Plugins. Öffne zuerst manuell ein Terminal in der rechten Sidebar, dann auf 'Aktuelles Terminal merken' klicken. Alternativ manuell eintragen."
       )
@@ -676,7 +703,7 @@ class TreeModalSettingTab extends PluginSettingTab {
             }
             this.plugin.settings.terminalViewType = type;
             await this.plugin.saveSettings();
-            new Notice(`Terminal-View-Type gespeichert: ${type}`);
+            new Notice(`Terminal-Viewtyp gespeichert: ${type}`);
             this.display();
           });
       });
