@@ -156,10 +156,19 @@ const LOCALES = {
 type LocaleStrings = typeof LOCALES.en;
 type LocaleKey = keyof LocaleStrings;
 
+function detectLocale(): string {
+  const fromStorage = window.localStorage.getItem("language");
+  const momentLocale = (window as unknown as {
+    moment?: { locale?: () => string };
+  }).moment?.locale?.();
+  const raw = (fromStorage || momentLocale || "en").toString();
+  return raw.toLowerCase().split(/[-_]/)[0];
+}
+
 function t<K extends LocaleKey>(key: K): LocaleStrings[K] {
-  const lang = window.localStorage.getItem("language") || "en";
+  const code = detectLocale();
   const locales = LOCALES as unknown as Record<string, LocaleStrings>;
-  const locale = locales[lang] ?? LOCALES.en;
+  const locale = locales[code] ?? LOCALES.en;
   return locale[key] as LocaleStrings[K];
 }
 
