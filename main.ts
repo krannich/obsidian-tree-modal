@@ -12,6 +12,157 @@ import {
 type TriggerModifier = "none" | "shift" | "alt";
 type ModalMode = "read" | "edit";
 
+const LOCALES = {
+  en: {
+    menuOpenInModal: "Open in modal",
+    menuOpenPath: "Open path in Finder",
+    cmdToggleCenter: "Toggle center area",
+    cmdOpenCurrentPath: "Open current note's path in Finder",
+    noticeNoActiveFile: "No active file.",
+    noticeNoProperty: (prop: string) =>
+      `No "${prop}" property in frontmatter.`,
+    noticeRequireUnavailable: "Open path: window.require not available.",
+    noticeShellUnavailable: "Open path: electron.shell not available.",
+    noticeOpenFailed: (err: string) => `Could not open path: ${err}`,
+    noticeOpenError: (err: string) => `Error opening path: ${err}`,
+    noticeNoTerminalFound:
+      "No terminal in the right sidebar. Open one there first, then click again.",
+    noticeTerminalSaved: (type: string) => `Terminal view type saved: ${type}`,
+    headingModal: "Modal",
+    headingPath: "Open path in Finder",
+    headingLayout: "Layout",
+    settingTriggerName: "Trigger",
+    settingTriggerDesc:
+      'Which key must be held when clicking a file in the tree to open the modal. "None" overrides the normal click (Cmd/Ctrl-click is always a fallback).',
+    triggerOptionNone: "None (normal click)",
+    triggerOptionShift: "Shift+click",
+    triggerOptionAlt: "Alt/Option+click",
+    settingFileMenuName: "Context menu entry",
+    settingFileMenuDesc:
+      'Right-clicking a file shows "Open in modal".',
+    settingDefaultModeName: "Default mode",
+    settingDefaultModeDesc:
+      "Which mode the modal opens in. You can always toggle inside the modal via Obsidian's native view header (book/pen icon).",
+    modeOptionRead: "Read",
+    modeOptionEdit: "Edit",
+    settingOpenNewFileName: "Open new files in modal",
+    settingOpenNewFileDesc:
+      "When enabled, a newly created markdown file opens automatically in the modal.",
+    settingPropertyKeyName: "Property key",
+    settingPropertyKeyDesc:
+      'Name of the frontmatter property whose value is opened as an external path via Shift+click or the context menu. Supports "~" as home directory.',
+    settingShiftClickName: "Shift+click on property",
+    settingShiftClickDesc:
+      "Shift+click on the property value in the properties panel opens the path in Finder/Explorer.",
+    settingFileMenuPathName: "Context menu on file",
+    settingFileMenuPathDesc:
+      'Right-clicking a file with the property set shows "Open path in Finder" in the menu.',
+    settingHideCenterName: "Hide center area",
+    settingHideCenterDesc:
+      "When enabled, hides the center workspace area (editor) and gives the space to the sidebars. Same effect as the command 'Tree Modal: Toggle center area'.",
+    settingHideChromeName: "Hide interface icons",
+    settingHideChromeDesc:
+      "Hides the sidebar toggle icons (top left/right) and the sync status icon at the bottom right.",
+    warnNoTerminalPrefix: "No terminal plugin active. ",
+    warnNoTerminalBody:
+      "The settings below require an installed terminal plugin (e.g. ",
+    warnNoTerminalLink: "Terminal",
+    warnNoTerminalSuffix: "). Install and enable it to use them.",
+    settingEnsureTerminalName: "Ensure terminal on startup",
+    settingEnsureTerminalDesc:
+      "On Obsidian start, check whether a terminal exists in the right sidebar and create one if missing. Requires the view type below to be set.",
+    settingTerminalViewTypeName: "Terminal view type",
+    settingTerminalViewTypeDesc:
+      "View type of the terminal plugin. Open a terminal in the right sidebar manually, then click 'Remember current terminal'. You can also enter the type manually.",
+    settingTerminalViewTypePlaceholder: "e.g. terminal:terminal-view",
+    settingTerminalCaptureButton: "Remember current terminal",
+    modalNoPreview: (ext: string) =>
+      `No preview for .${ext}. Cmd/Ctrl-click opens the file normally.`,
+    warnTerminalSetupFailed: "[tree-modal] Could not create terminal view",
+  },
+  de: {
+    menuOpenInModal: "In Modal öffnen",
+    menuOpenPath: "Pfad im Finder öffnen",
+    cmdToggleCenter: "Mittleren Bereich umschalten",
+    cmdOpenCurrentPath: "Pfad der aktuellen Notiz im Finder öffnen",
+    noticeNoActiveFile: "Keine aktive Datei.",
+    noticeNoProperty: (prop: string) =>
+      `Keine Property "${prop}" in der Frontmatter.`,
+    noticeRequireUnavailable: "Finder-Öffnen: window.require nicht verfügbar.",
+    noticeShellUnavailable: "Finder-Öffnen: electron.shell nicht verfügbar.",
+    noticeOpenFailed: (err: string) =>
+      `Pfad konnte nicht geöffnet werden: ${err}`,
+    noticeOpenError: (err: string) => `Fehler beim Öffnen: ${err}`,
+    noticeNoTerminalFound:
+      "Kein Terminal in der rechten Sidebar gefunden. Erst ein Terminal dort öffnen, dann erneut klicken.",
+    noticeTerminalSaved: (type: string) =>
+      `Terminal-Viewtyp gespeichert: ${type}`,
+    headingModal: "Modal",
+    headingPath: "Pfad im Finder öffnen",
+    headingLayout: "Layout",
+    settingTriggerName: "Auslöser",
+    settingTriggerDesc:
+      'Welche Taste beim Klick auf eine Datei im Baum gedrückt sein muss, damit das Modal öffnet. "Keine" überschreibt den normalen Klick (Cmd/Ctrl-Klick bleibt Escape).',
+    triggerOptionNone: "Keine (normaler Klick)",
+    triggerOptionShift: "Shift+Klick",
+    triggerOptionAlt: "Alt/Option+Klick",
+    settingFileMenuName: "Kontextmenü-Eintrag",
+    settingFileMenuDesc:
+      'Rechtsklick auf eine Datei zeigt "In Modal öffnen".',
+    settingDefaultModeName: "Standardmodus",
+    settingDefaultModeDesc:
+      "Mit welchem Modus das Modal initial öffnet. Innerhalb des Modals kannst du über den Obsidian-View-Header (Buch-/Stift-Icon) jederzeit umschalten.",
+    modeOptionRead: "Lesen",
+    modeOptionEdit: "Bearbeiten",
+    settingOpenNewFileName: "Neue Dateien im Modal öffnen",
+    settingOpenNewFileDesc:
+      "Wenn aktiv, öffnet eine frisch angelegte Markdown-Datei automatisch im Modal.",
+    settingPropertyKeyName: "Property-Schlüssel",
+    settingPropertyKeyDesc:
+      'Name der Frontmatter-Property, deren Wert per Shift+Klick oder Kontextmenü als externer Pfad im Finder/Explorer geöffnet wird. Unterstützt "~" als Heimverzeichnis.',
+    settingShiftClickName: "Shift+Klick auf Property",
+    settingShiftClickDesc:
+      "Shift+Klick auf den Wert der Property im Eigenschaften-Panel öffnet den Pfad im Finder/Explorer.",
+    settingFileMenuPathName: "Kontextmenü auf Datei",
+    settingFileMenuPathDesc:
+      'Rechtsklick auf eine Datei mit gesetzter Property zeigt "Pfad im Finder öffnen" als Menü-Eintrag.',
+    settingHideCenterName: "Mittleren Bereich ausblenden",
+    settingHideCenterDesc:
+      "Wenn aktiv, wird der mittlere Workspace-Bereich (Editor) ausgeblendet und der Platz an die Sidebars gegeben. Gleicher Effekt wie der Command 'Tree Modal: Mittleren Bereich umschalten'.",
+    settingHideChromeName: "Oberflächen-Icons ausblenden",
+    settingHideChromeDesc:
+      "Versteckt die Sidebar-Toggle-Icons (links/rechts oben) und das Sync-Status-Icon unten rechts.",
+    warnNoTerminalPrefix: "Kein Terminal-Plugin aktiv. ",
+    warnNoTerminalBody:
+      "Die folgenden Einstellungen benötigen ein installiertes Terminal-Plugin (z. B. ",
+    warnNoTerminalLink: "Terminal",
+    warnNoTerminalSuffix:
+      "). Installiere und aktiviere es, um sie zu nutzen.",
+    settingEnsureTerminalName: "Terminal beim Start rechts sicherstellen",
+    settingEnsureTerminalDesc:
+      "Nach Obsidian-Start prüfen, ob ein Terminal in der rechten Sidebar existiert, und ggf. eins anlegen. Funktioniert nur, wenn der View-Type unten gesetzt ist.",
+    settingTerminalViewTypeName: "Terminal-Viewtyp",
+    settingTerminalViewTypeDesc:
+      "View-Type des Terminal-Plugins. Öffne zuerst manuell ein Terminal in der rechten Sidebar, dann auf 'Aktuelles Terminal merken' klicken. Alternativ manuell eintragen.",
+    settingTerminalViewTypePlaceholder: "z.B. terminal:terminal-view",
+    settingTerminalCaptureButton: "Aktuelles Terminal merken",
+    modalNoPreview: (ext: string) =>
+      `Keine Vorschau für .${ext}. Cmd/Ctrl-Klick öffnet die Datei normal.`,
+    warnTerminalSetupFailed:
+      "[tree-modal] Konnte Terminal-View nicht rechts anlegen",
+  },
+} as const;
+
+type LocaleStrings = typeof LOCALES.en;
+type LocaleKey = keyof LocaleStrings;
+
+function t<K extends LocaleKey>(key: K): LocaleStrings[K] {
+  const lang = window.localStorage.getItem("language") || "en";
+  const locales = LOCALES as unknown as Record<string, LocaleStrings>;
+  const locale = locales[lang] ?? LOCALES.en;
+  return locale[key] as LocaleStrings[K];
+}
+
 interface TreeModalSettings {
   triggerModifier: TriggerModifier;
   enableFileMenu: boolean;
@@ -66,7 +217,7 @@ export default class TreeModalPlugin extends Plugin {
         if (this.settings.enableFileMenu) {
           menu.addItem((item) => {
             item
-              .setTitle("In Modal öffnen")
+              .setTitle(t("menuOpenInModal"))
               .setIcon("maximize-2")
               .onClick(() => this.openModalForFile(file));
           });
@@ -76,7 +227,7 @@ export default class TreeModalPlugin extends Plugin {
           if (raw) {
             menu.addItem((item) => {
               item
-                .setTitle("Pfad im Finder öffnen")
+                .setTitle(t("menuOpenPath"))
                 .setIcon("folder-open")
                 .onClick(() => this.openPath(raw));
             });
@@ -92,24 +243,22 @@ export default class TreeModalPlugin extends Plugin {
 
     this.addCommand({
       id: "toggle-center-area",
-      name: "Mittleren Bereich umschalten",
+      name: t("cmdToggleCenter"),
       callback: () => this.toggleHideCenter(),
     });
 
     this.addCommand({
       id: "open-path-in-finder",
-      name: "Pfad der aktuellen Notiz im Finder öffnen",
+      name: t("cmdOpenCurrentPath"),
       callback: () => {
         const file = this.app.workspace.getActiveFile();
         if (!file) {
-          new Notice("Keine aktive Datei.");
+          new Notice(t("noticeNoActiveFile"));
           return;
         }
         const raw = this.readPathProperty(file);
         if (!raw) {
-          new Notice(
-            `Keine Property "${this.settings.openPathProperty}" in der Frontmatter.`
-          );
+          new Notice(t("noticeNoProperty")(this.settings.openPathProperty));
           return;
         }
         this.openPath(raw);
@@ -253,7 +402,7 @@ export default class TreeModalPlugin extends Plugin {
         require?: (m: string) => unknown;
       }).require;
       if (!req) {
-        new Notice("Finder-Öffnen: window.require nicht verfügbar.");
+        new Notice(t("noticeRequireUnavailable"));
         return;
       }
       const electron = req("electron") as {
@@ -261,19 +410,19 @@ export default class TreeModalPlugin extends Plugin {
       };
       const shell = electron?.shell;
       if (!shell) {
-        new Notice("Finder-Öffnen: electron.shell nicht verfügbar.");
+        new Notice(t("noticeShellUnavailable"));
         return;
       }
       shell
         .openPath(abs)
         .then((err) => {
-          if (err) new Notice(`Pfad konnte nicht geöffnet werden: ${err}`);
+          if (err) new Notice(t("noticeOpenFailed")(err));
         })
         .catch((e) => {
-          new Notice(`Finder-Öffnen fehlgeschlagen: ${String(e)}`);
+          new Notice(t("noticeOpenError")(String(e)));
         });
     } catch (e) {
-      new Notice(`Fehler beim Öffnen: ${String(e)}`);
+      new Notice(t("noticeOpenError")(String(e)));
     }
   }
 
@@ -351,10 +500,7 @@ export default class TreeModalPlugin extends Plugin {
     try {
       await leaf.setViewState({ type: viewType, active: false });
     } catch (e) {
-      console.warn(
-        `[tree-modal] Konnte Terminal-View "${viewType}" nicht rechts anlegen:`,
-        e
-      );
+      console.warn(`${t("warnTerminalSetupFailed")} "${viewType}":`, e);
     }
   }
 
@@ -389,7 +535,7 @@ class PreviewModal extends Modal {
     if (this.file.extension !== "md") {
       this.contentEl.createDiv({
         cls: "tree-modal-empty",
-        text: `Keine Vorschau für .${this.file.extension}. Cmd/Ctrl-Click öffnet die Datei normal.`,
+        text: t("modalNoPreview")(this.file.extension),
       });
       return;
     }
@@ -503,18 +649,16 @@ class TreeModalSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    new Setting(containerEl).setName("Modal").setHeading();
+    new Setting(containerEl).setName(t("headingModal")).setHeading();
 
     new Setting(containerEl)
-      .setName("Auslöser")
-      .setDesc(
-        'Welche Taste beim Klick auf eine Datei im Baum gedrückt sein muss, damit das Modal öffnet. "Keine" überschreibt den normalen Klick (Cmd/Ctrl-Klick bleibt Escape).'
-      )
+      .setName(t("settingTriggerName"))
+      .setDesc(t("settingTriggerDesc"))
       .addDropdown((dd) =>
         dd
-          .addOption("none", "Keine (normaler Klick)")
-          .addOption("shift", "Shift+Klick")
-          .addOption("alt", "Alt/Option+Klick")
+          .addOption("none", t("triggerOptionNone"))
+          .addOption("shift", t("triggerOptionShift"))
+          .addOption("alt", t("triggerOptionAlt"))
           .setValue(this.plugin.settings.triggerModifier)
           .onChange(async (value) => {
             this.plugin.settings.triggerModifier = value as TriggerModifier;
@@ -523,8 +667,8 @@ class TreeModalSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Kontextmenü-Eintrag")
-      .setDesc('Rechtsklick auf eine Datei zeigt "In Modal öffnen".')
+      .setName(t("settingFileMenuName"))
+      .setDesc(t("settingFileMenuDesc"))
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.enableFileMenu)
@@ -535,14 +679,12 @@ class TreeModalSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Standardmodus")
-      .setDesc(
-        "Mit welchem Modus das Modal initial öffnet. Innerhalb des Modals kannst du über den Obsidian-View-Header (Buch-/Stift-Icon) jederzeit umschalten."
-      )
+      .setName(t("settingDefaultModeName"))
+      .setDesc(t("settingDefaultModeDesc"))
       .addDropdown((dd) =>
         dd
-          .addOption("read", "Lesen")
-          .addOption("edit", "Bearbeiten")
+          .addOption("read", t("modeOptionRead"))
+          .addOption("edit", t("modeOptionEdit"))
           .setValue(this.plugin.settings.defaultMode)
           .onChange(async (value) => {
             this.plugin.settings.defaultMode = value as ModalMode;
@@ -551,10 +693,8 @@ class TreeModalSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Neue Dateien im Modal öffnen")
-      .setDesc(
-        "Wenn aktiv, öffnet eine frisch angelegte Markdown-Datei automatisch im Modal."
-      )
+      .setName(t("settingOpenNewFileName"))
+      .setDesc(t("settingOpenNewFileDesc"))
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.openNewFileInModal)
@@ -564,13 +704,11 @@ class TreeModalSettingTab extends PluginSettingTab {
           })
       );
 
-    new Setting(containerEl).setName("Pfad im Finder öffnen").setHeading();
+    new Setting(containerEl).setName(t("headingPath")).setHeading();
 
     new Setting(containerEl)
-      .setName("Property-Schlüssel")
-      .setDesc(
-        'Name der Frontmatter-Property, deren Wert per Shift+Klick oder Kontextmenü als externer Pfad im Finder/Explorer geöffnet wird. Unterstützt "~" als Heimverzeichnis.'
-      )
+      .setName(t("settingPropertyKeyName"))
+      .setDesc(t("settingPropertyKeyDesc"))
       .addText((text) =>
         text
           .setPlaceholder("path")
@@ -582,10 +720,8 @@ class TreeModalSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Shift+Klick auf Property")
-      .setDesc(
-        "Shift+Klick auf den Wert der Property im Eigenschaften-Panel öffnet den Pfad im Finder/Explorer."
-      )
+      .setName(t("settingShiftClickName"))
+      .setDesc(t("settingShiftClickDesc"))
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.enableOpenPathShiftClick)
@@ -596,10 +732,8 @@ class TreeModalSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Kontextmenü auf Datei")
-      .setDesc(
-        'Rechtsklick auf eine Datei mit gesetzter Property zeigt "Pfad im Finder öffnen" als Menü-Eintrag.'
-      )
+      .setName(t("settingFileMenuPathName"))
+      .setDesc(t("settingFileMenuPathDesc"))
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.enableOpenPathFileMenu)
@@ -609,13 +743,11 @@ class TreeModalSettingTab extends PluginSettingTab {
           })
       );
 
-    new Setting(containerEl).setName("Layout").setHeading();
+    new Setting(containerEl).setName(t("headingLayout")).setHeading();
 
     new Setting(containerEl)
-      .setName("Mittleren Bereich ausblenden")
-      .setDesc(
-        "Wenn aktiv, wird der mittlere Workspace-Bereich (Editor) ausgeblendet und der Platz an die Sidebars gegeben. Gleicher Effekt wie der Command 'Tree Modal: Mittleren Bereich umschalten'."
-      )
+      .setName(t("settingHideCenterName"))
+      .setDesc(t("settingHideCenterDesc"))
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.hideCenter)
@@ -627,10 +759,8 @@ class TreeModalSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Oberflächen-Icons ausblenden")
-      .setDesc(
-        "Versteckt die Sidebar-Toggle-Icons (links/rechts oben) und das Sync-Status-Icon unten rechts."
-      )
+      .setName(t("settingHideChromeName"))
+      .setDesc(t("settingHideChromeDesc"))
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.hideChrome)
@@ -645,22 +775,18 @@ class TreeModalSettingTab extends PluginSettingTab {
 
     if (!hasTerminal) {
       const warn = containerEl.createDiv({ cls: "tree-modal-warn" });
-      warn.createEl("strong", { text: "Kein Terminal-Plugin aktiv. " });
-      warn.appendText(
-        "Die folgenden Einstellungen benötigen ein installiertes Terminal-Plugin (z. B. "
-      );
+      warn.createEl("strong", { text: t("warnNoTerminalPrefix") });
+      warn.appendText(t("warnNoTerminalBody"));
       warn.createEl("a", {
-        text: "Terminal",
+        text: t("warnNoTerminalLink"),
         href: "obsidian://show-plugin?id=terminal",
       });
-      warn.appendText("). Installiere und aktiviere es, um sie zu nutzen.");
+      warn.appendText(t("warnNoTerminalSuffix"));
     }
 
     new Setting(containerEl)
-      .setName("Terminal beim Start rechts sicherstellen")
-      .setDesc(
-        "Nach Obsidian-Start prüfen, ob ein Terminal in der rechten Sidebar existiert, und ggf. eins anlegen. Funktioniert nur, wenn der View-Type unten gesetzt ist."
-      )
+      .setName(t("settingEnsureTerminalName"))
+      .setDesc(t("settingEnsureTerminalDesc"))
       .setDisabled(!hasTerminal)
       .addToggle((toggle) =>
         toggle
@@ -673,14 +799,12 @@ class TreeModalSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Terminal-Viewtyp")
-      .setDesc(
-        "View-Type des Terminal-Plugins. Öffne zuerst manuell ein Terminal in der rechten Sidebar, dann auf 'Aktuelles Terminal merken' klicken. Alternativ manuell eintragen."
-      )
+      .setName(t("settingTerminalViewTypeName"))
+      .setDesc(t("settingTerminalViewTypeDesc"))
       .setDisabled(!hasTerminal)
       .addText((text) =>
         text
-          .setPlaceholder("z.B. terminal:terminal-view")
+          .setPlaceholder(t("settingTerminalViewTypePlaceholder"))
           .setValue(this.plugin.settings.terminalViewType)
           .setDisabled(!hasTerminal)
           .onChange(async (value) => {
@@ -690,20 +814,18 @@ class TreeModalSettingTab extends PluginSettingTab {
       )
       .addButton((btn) => {
         btn
-          .setButtonText("Aktuelles Terminal merken")
+          .setButtonText(t("settingTerminalCaptureButton"))
           .setCta()
           .setDisabled(!hasTerminal)
           .onClick(async () => {
             const type = this.plugin.captureRightTerminalViewType();
             if (!type) {
-              new Notice(
-                "Kein Terminal in der rechten Sidebar gefunden. Erst ein Terminal dort öffnen, dann erneut klicken."
-              );
+              new Notice(t("noticeNoTerminalFound"));
               return;
             }
             this.plugin.settings.terminalViewType = type;
             await this.plugin.saveSettings();
-            new Notice(`Terminal-Viewtyp gespeichert: ${type}`);
+            new Notice(t("noticeTerminalSaved")(type));
             this.display();
           });
       });
