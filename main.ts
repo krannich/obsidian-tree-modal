@@ -1,5 +1,6 @@
 import {
   App,
+  EventRef,
   Modal,
   Notice,
   Plugin,
@@ -51,6 +52,7 @@ const LOCALES = {
     settingPropertyKeyName: "Property key",
     settingPropertyKeyDesc:
       'Name of the frontmatter property whose value is opened as an external path via Shift+click or the context menu. Supports "~" as home directory.',
+    settingPropertyKeyPlaceholder: "E.g. path",
     settingShiftClickName: "Shift+click on property",
     settingShiftClickDesc:
       "Shift+click on the property value in the properties panel opens the path in Finder/Explorer.",
@@ -120,6 +122,7 @@ const LOCALES = {
     settingPropertyKeyName: "Property-Schlüssel",
     settingPropertyKeyDesc:
       'Name der Frontmatter-Property, deren Wert per Shift+Klick oder Kontextmenü als externer Pfad im Finder/Explorer geöffnet wird. Unterstützt "~" als Heimverzeichnis.',
+    settingPropertyKeyPlaceholder: "z. B. path",
     settingShiftClickName: "Shift+Klick auf Property",
     settingShiftClickDesc:
       "Shift+Klick auf den Wert der Property im Eigenschaften-Panel öffnet den Pfad im Finder/Explorer.",
@@ -169,7 +172,7 @@ function t<K extends LocaleKey>(key: K): LocaleStrings[K] {
   const code = detectLocale();
   const locales = LOCALES as unknown as Record<string, LocaleStrings>;
   const locale = locales[code] ?? LOCALES.en;
-  return locale[key] as LocaleStrings[K];
+  return locale[key];
 }
 
 interface TreeModalSettings {
@@ -200,8 +203,16 @@ const DEFAULT_SETTINGS: TreeModalSettings = {
   openNewFileInModal: false,
 };
 
+const NEW_FILE_MENU_PREFIXES = [
+  "new note",
+  "neue notiz",
+];
+
+const NEW_FILE_INTENT_WINDOW_MS = 15000;
+
 export default class TreeModalPlugin extends Plugin {
   settings: TreeModalSettings = DEFAULT_SETTINGS;
+  private newFileIntentUntil = 0;
 
   async onload() {
     await this.loadSettings();
@@ -215,8 +226,34 @@ export default class TreeModalPlugin extends Plugin {
 
     this.registerDomEvent(
       document,
+      "dblclick",
+      this.handleExplorerDblClick.bind(this),
+      { capture: true }
+    );
+
+    this.registerDomEvent(
+      document,
       "mousedown",
       this.handleMousedown.bind(this),
+      { capture: true }
+    );
+
+    this.registerDomEvent(
+      document,
+      "keydown",
+      this.handleNewFileKeydown.bind(this),
+      { capture: true }
+    );
+    this.registerDomEvent(
+      document,
+      "click",
+      this.handleNewFileMenuClick.bind(this),
+      { capture: true }
+    );
+    this.registerDomEvent(
+      document,
+      "mousedown",
+      this.handleNewFileMenuClick.bind(this),
       { capture: true }
     );
 
@@ -279,6 +316,9 @@ export default class TreeModalPlugin extends Plugin {
       document.body.removeClass("tree-modal-hide-chrome");
     });
 
+    this.patchCommandsForNewFileIntent();
+    this.patchFileManagerForNewFileIntent();
+
     this.app.workspace.onLayoutReady(() => {
       if (this.settings.ensureTerminalRight && this.settings.terminalViewType) {
         // Delay, damit asynchron registrierende Plugins (Terminal) ihre
@@ -293,10 +333,110 @@ export default class TreeModalPlugin extends Plugin {
           if (!this.settings.openNewFileInModal) return;
           if (!(file instanceof TFile)) return;
           if (file.extension !== "md") return;
+          // Nur öffnen wenn eine explizite New-File-Intent vorausging.
+          // Programmatische Creates (Sync, Templater, Bulk-Imports) haben
+          // die nicht — nur CMD+N oder Rechtsklick → "New note" setzen sie.
+          if (Date.now() > this.newFileIntentUntil) return;
+          this.newFileIntentUntil = 0;
           this.openModalForFile(file);
         })
       );
     });
+  }
+
+  private armNewFileIntent(_source: string) {
+    this.newFileIntentUntil = Date.now() + NEW_FILE_INTENT_WINDOW_MS;
+  }
+
+  private patchFileManagerForNewFileIntent() {
+    const fm = this.app.fileManager as unknown as Record<
+      string,
+      ((...args: unknown[]) => unknown) | undefined
+    >;
+    const methods = [
+      "createNewMarkdownFile",
+      "createNewFile",
+      "createNewMarkdownFileFromLinktext",
+    ];
+    for (const name of methods) {
+      const fn = fm[name];
+      if (typeof fn !== "function") continue;
+      const original = fn.bind(fm);
+      fm[name] = (...args: unknown[]) => {
+        this.armNewFileIntent(`fileManager.${name}`);
+        return original(...args);
+      };
+      this.register(() => {
+        fm[name] = original;
+      });
+    }
+  }
+
+  private patchCommandsForNewFileIntent() {
+    const commands = (this.app as unknown as {
+      commands?: {
+        executeCommandById?: (id: string) => unknown;
+      };
+    }).commands;
+    if (!commands || typeof commands.executeCommandById !== "function") return;
+    const original = commands.executeCommandById.bind(commands);
+    const NEW_FILE_RE = /new.?file|new.?note|neue.?notiz|neue.?datei/i;
+    commands.executeCommandById = (id: string) => {
+      if (NEW_FILE_RE.test(id)) {
+        this.armNewFileIntent(`command:${id}`);
+      }
+      return original(id);
+    };
+    this.register(() => {
+      commands.executeCommandById = original;
+    });
+  }
+
+  private handleNewFileKeydown(evt: KeyboardEvent) {
+    if (evt.key === "Enter" && evt.shiftKey && !evt.metaKey && !evt.ctrlKey && !evt.altKey) {
+      if (this.openFocusedTreeFileInModal()) {
+        evt.preventDefault();
+        evt.stopPropagation();
+      }
+      return;
+    }
+    if (!(evt.metaKey || evt.ctrlKey)) return;
+    if (evt.shiftKey || evt.altKey) return;
+    if (evt.key.toLowerCase() !== "n") return;
+    this.armNewFileIntent("cmd+n");
+  }
+
+  private openFocusedTreeFileInModal(): boolean {
+    const candidate =
+      document.querySelector<HTMLElement>(".nav-file-title.has-focus") ||
+      document.querySelector<HTMLElement>(".nav-file-title.is-active") ||
+      (document.activeElement instanceof HTMLElement
+        ? document.activeElement.closest<HTMLElement>(".nav-file-title")
+        : null);
+    if (!candidate) return false;
+    const path = candidate.getAttribute("data-path");
+    if (!path) return false;
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) return false;
+    this.openModalForFile(file);
+    return true;
+  }
+
+  private handleNewFileMenuClick(evt: MouseEvent) {
+    const target = evt.target as HTMLElement | null;
+    if (!target) return;
+    if (evt.type === "mousedown" && evt.button !== 0) return;
+
+    const item = target.closest<HTMLElement>(".menu-item");
+    if (!item) return;
+    const title = (
+      item.querySelector(".menu-item-title")?.textContent ||
+      item.textContent ||
+      ""
+    ).trim().toLowerCase();
+    if (!title) return;
+    if (!NEW_FILE_MENU_PREFIXES.some((p) => title.startsWith(p))) return;
+    this.armNewFileIntent(`menu:${title}`);
   }
 
   private handleMousedown(evt: MouseEvent) {
@@ -311,8 +451,12 @@ export default class TreeModalPlugin extends Plugin {
   private handleExplorerClick(evt: MouseEvent) {
     const target = evt.target as HTMLElement | null;
     if (!target) return;
+    this.handlePropertyShiftClick(evt, target);
+  }
 
-    if (this.handlePropertyShiftClick(evt, target)) return;
+  private handleExplorerDblClick(evt: MouseEvent) {
+    const target = evt.target as HTMLElement | null;
+    if (!target) return;
 
     const item = target.closest<HTMLElement>(".nav-file-title");
     if (!item) return;
@@ -530,6 +674,7 @@ class PreviewModal extends Modal {
   private file: TFile;
   private plugin: TreeModalPlugin;
   private leaf: WorkspaceLeaf | null = null;
+  private layoutChangeRef: EventRef | null = null;
 
   constructor(app: App, file: TFile, plugin: TreeModalPlugin) {
     super(app);
@@ -576,6 +721,15 @@ class PreviewModal extends Modal {
       this.handleInternalLinkClick,
       { capture: true }
     );
+
+    this.layoutChangeRef = this.app.workspace.on("layout-change", () => {
+      if (!this.leaf) return;
+      const view = this.leaf.view as unknown as { file?: TFile | null } | null;
+      const viewType = this.leaf.view?.getViewType();
+      if (viewType !== "markdown" || !view?.file) {
+        this.close();
+      }
+    });
   }
 
   onClose() {
@@ -584,6 +738,10 @@ class PreviewModal extends Modal {
       this.handleInternalLinkClick,
       { capture: true } as EventListenerOptions
     );
+    if (this.layoutChangeRef) {
+      this.app.workspace.offref(this.layoutChangeRef);
+      this.layoutChangeRef = null;
+    }
     if (this.leaf) {
       try {
         this.leaf.detach();
@@ -720,7 +878,7 @@ class TreeModalSettingTab extends PluginSettingTab {
       .setDesc(t("settingPropertyKeyDesc"))
       .addText((text) =>
         text
-          .setPlaceholder("path")
+          .setPlaceholder(t("settingPropertyKeyPlaceholder"))
           .setValue(this.plugin.settings.openPathProperty)
           .onChange(async (value) => {
             this.plugin.settings.openPathProperty = value.trim() || "path";
